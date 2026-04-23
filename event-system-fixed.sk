@@ -1,0 +1,1245 @@
+# ============================================================
+# KlawCraft: Era of Supes — Permadeath Event & Lore Event System
+# FIXED VERSION — All syntax errors corrected
+# ============================================================
+
+options:
+    prefix: &8[&c&lKC&8] &7
+    event_prefix: &8[&4&lPD&8] &7
+    lore_prefix: &8[&b&lLore&8] &7
+    star1: 5
+    star2: 15
+    star3: 30
+    star4: 45
+    star5: 75
+    hospital_cost: 10000
+    leave_xp_penalty: 10
+    leave_rep_penalty: 5
+    countdown_seconds: 25
+    default_duration: 600
+    lore_crate: lore
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+function pdInit(p: player):
+    set {_uuid} to {_p}'s uuid
+    if {pd.%{_uuid}%.status} is not set:
+        set {pd.%{_uuid}%.status} to "alive"
+    if {pd.%{_uuid}%.injury_tier} is not set:
+        set {pd.%{_uuid}%.injury_tier} to 0
+    if {pd.%{_uuid}%.injury_remaining} is not set:
+        set {pd.%{_uuid}%.injury_remaining} to 0
+    if {pd.%{_uuid}%.reputation} is not set:
+        set {pd.%{_uuid}%.reputation} to 0
+    if {pd.%{_uuid}%.stars} is not set:
+        set {pd.%{_uuid}%.stars} to 1
+    if {pd.%{_uuid}%.event_deaths} is not set:
+        set {pd.%{_uuid}%.event_deaths} to 0
+    if {pd.%{_uuid}%.events_played} is not set:
+        set {pd.%{_uuid}%.events_played} to 0
+    if {pd.%{_uuid}%.event_kills} is not set:
+        set {pd.%{_uuid}%.event_kills} to 0
+
+function pdGetStarFromRep(rep: integer) :: integer:
+    if {_rep} >= {@star5}:
+        return 5
+    else if {_rep} >= {@star4}:
+        return 4
+    else if {_rep} >= {@star3}:
+        return 3
+    else if {_rep} >= {@star2}:
+        return 2
+    else if {_rep} >= {@star1}:
+        return 1
+    return 1
+
+function pdUpdateStars(p: player):
+    set {_uuid} to {_p}'s uuid
+    set {_oldstars} to {pd.%{_uuid}%.stars}
+    set {_newstars} to pdGetStarFromRep({pd.%{_uuid}%.reputation})
+    if {_newstars} > {_oldstars}:
+        set {pd.%{_uuid}%.stars} to {_newstars}
+        set {_pname} to {_p}'s name
+        execute console command "lp user %{_pname}% parent remove 1-star"
+        execute console command "lp user %{_pname}% parent remove 2-star"
+        execute console command "lp user %{_pname}% parent remove 3-star"
+        execute console command "lp user %{_pname}% parent remove 4-star"
+        execute console command "lp user %{_pname}% parent remove 5-star"
+        execute console command "lp user %{_pname}% parent remove S-star"
+        execute console command "lp user %{_pname}% parent remove SS-star"
+        execute console command "lp user %{_pname}% parent remove SSS-star"
+        wait 3 ticks
+        set {_group} to "%{_newstars}%-star"
+        if {_newstars} is 6:
+            set {_group} to "S-star"
+        else if {_newstars} is 7:
+            set {_group} to "SS-star"
+        else if {_newstars} is 8:
+            set {_group} to "SSS-star"
+        execute console command "lp user %{_pname}% parent add %{_group}%"
+        execute console command "crates key give %{_p}% {@lore_crate} 1"
+        set {_stardisplay} to "%{_newstars}%★"
+        if {_newstars} is 6:
+            set {_stardisplay} to "S★"
+        else if {_newstars} is 7:
+            set {_stardisplay} to "SS★"
+        else if {_newstars} is 8:
+            set {_stardisplay} to "SSS★"
+        send "{@event_prefix}&6&l★ STAR UP! ★ &7You are now a &e%{_stardisplay}% &7Supe!" to {_p}
+        send "{@event_prefix}&7You received a &b&lLore Crate Key&7!" to {_p}
+        make console execute command "playsound minecraft:ui.toast.challenge_complete master %{_pname}% ~ ~ ~ 1 1"
+    else if {_newstars} < {_oldstars}:
+        set {pd.%{_uuid}%.stars} to {_newstars}
+        set {_pname} to {_p}'s name
+        execute console command "lp user %{_pname}% parent remove 1-star"
+        execute console command "lp user %{_pname}% parent remove 2-star"
+        execute console command "lp user %{_pname}% parent remove 3-star"
+        execute console command "lp user %{_pname}% parent remove 4-star"
+        execute console command "lp user %{_pname}% parent remove 5-star"
+        execute console command "lp user %{_pname}% parent remove S-star"
+        execute console command "lp user %{_pname}% parent remove SS-star"
+        execute console command "lp user %{_pname}% parent remove SSS-star"
+        wait 3 ticks
+        if {_newstars} > 0:
+            set {_group} to "%{_newstars}%-star"
+            if {_newstars} is 6:
+                set {_group} to "S-star"
+            else if {_newstars} is 7:
+                set {_group} to "SS-star"
+            else if {_newstars} is 8:
+                set {_group} to "SSS-star"
+            execute console command "lp user %{_pname}% parent add %{_group}%"
+        send "{@event_prefix}&c&l★ STAR LOST ★ &7You dropped to a lower star rank." to {_p}
+
+function pdSyncMeta(p: player):
+    set {_uuid} to {_p}'s uuid
+    set {_pname} to {_p}'s name
+    set {_rep} to {pd.%{_uuid}%.reputation}
+    if {_rep} is not set:
+        set {_rep} to 0
+    set {_stars} to {pd.%{_uuid}%.stars}
+    if {_stars} is not set:
+        set {_stars} to 1
+    set {_status} to {pd.%{_uuid}%.status}
+    if {_status} is not set:
+        set {_status} to "alive"
+    execute console command "lp user %{_pname}% meta set reputation %{_rep}%"
+    execute console command "lp user %{_pname}% meta set stars %{_stars}%"
+    execute console command "lp user %{_pname}% meta set pd_status %{_status}%"
+    set {_inj} to {pd.%{_uuid}%.injury_remaining}
+    if {_inj} is not set:
+        set {_inj} to 0
+    execute console command "lp user %{_pname}% meta set injury_remaining %{_inj}%"
+
+# ============================================================
+# ON JOIN: Enforce spectator for injured/dead
+# ============================================================
+
+on join:
+    wait 3 seconds
+    pdInit(player)
+    pdSyncMeta(player)
+    set {_uuid} to player's uuid
+    if {pd.active} is true:
+        if {pd.active.phase} is "active":
+            if {pd.active.dead::*} contains {_uuid}:
+                set player's game mode to spectator
+                send "{@event_prefix}&cYou died in the event and cannot re-enter." to player
+                send "{@event_prefix}&7Wait for the event to end." to player
+                stop
+            set {_status} to {pd.%{_uuid}%.status}
+            if {_status} is "injured":
+                set player's game mode to spectator
+                send "{@event_prefix}&cYou are &4&lINJURED&c and cannot join the active event." to player
+                send "{@event_prefix}&7You are in spectator mode. Wait for the event to end." to player
+                stop
+            if {_status} is "dead":
+                set player's game mode to spectator
+                send "{@event_prefix}&cYou are &4&lDEAD&c and cannot join the active event." to player
+                send "{@event_prefix}&7Use &e/resurrect&7 or &e/hospital&7 after the event." to player
+                stop
+            if {pd.active.declined::*} contains {_uuid}:
+                set player's game mode to spectator
+                send "{@event_prefix}&7You are spectating until the event ends." to player
+                stop
+            if {pd.active.players::*} does not contain {_uuid}:
+                if {pd.active.participants::*} does not contain {_uuid}:
+                    add {_uuid} to {pd.active.declined::*}
+                    set player's game mode to spectator
+                    give player 1 cookie named "&6&lGood Sport Cookie" with lore "&7Thanks for waiting!"
+                    send "{@event_prefix}&7An event is in progress. You've been put in &eSpectator&7 mode." to player
+                    send "{@event_prefix}&7Wait for the event to end to play normally." to player
+                    stop
+    set {_status} to {pd.%player's uuid%.status}
+    if {_status} is "dead":
+        make console execute command "effect give %player% minecraft:weakness 999999 1 true"
+
+on drop:
+    if {pd.active} is true:
+        set {_itemname} to name of event-item
+        if {_itemname} is "&9&lHero Banner" or {_itemname} is "&c&lVillain Banner":
+            send "{@event_prefix}&cYou cannot drop your team banner during an event!" to player
+            cancel event
+        if event-item has nbt "pd_banner":
+            send "{@event_prefix}&cEvent items cannot be dropped!" to player
+            cancel event
+
+on inventory click:
+    if {pd.active} is true:
+        set {_itemname} to name of event-item
+        if {_itemname} is "&9&lHero Banner" or {_itemname} is "&c&lVillain Banner":
+            if event-inventory is not player's inventory:
+                send "{@event_prefix}&cYou cannot place your banner in containers during an event!" to player
+                cancel event
+        if event-item has nbt "pd_banner":
+            if event-inventory is not player's inventory:
+                send "{@event_prefix}&cEvent items cannot be moved to containers!" to player
+                cancel event
+
+# ============================================================
+# INJURY SYSTEM
+# ============================================================
+
+function pdApplyInjury(p: player):
+    set {_uuid} to {_p}'s uuid
+    add 1 to {pd.%{_uuid}%.injury_tier}
+    set {pd.%{_uuid}%.injury_remaining} to {pd.%{_uuid}%.injury_tier}
+    add 1 to {pd.%{_uuid}%.event_deaths}
+    if {pd.%{_uuid}%.injury_tier} >= 4:
+        set {pd.%{_uuid}%.status} to "dead"
+        make console execute command "effect give %{_p}% minecraft:weakness 999999 1 true"
+        pdSyncMeta({_p})
+        send "" to {_p}
+        send "&8&m                                                    " to {_p}
+        send "  &4&l☠ DEAD ☠" to {_p}
+        send "" to {_p}
+        send "  &7You have been &4&lKILLED&7 during a Permadeath Event!" to {_p}
+        send "  &7Injury Tier: &c%{pd.%{_uuid}%.injury_tier}% &7(Dead)" to {_p}
+        send "  &7Events Locked: &c%{pd.%{_uuid}%.injury_remaining}%" to {_p}
+        send "" to {_p}
+        send "  &7You are &4&lDEAD&7. Use &e/resurrect &7(&a20,000 Bucks&7) to revive" to {_p}
+        send "  &7Or use &e/hospital &7(&a10,000 Bucks&7) to revive" to {_p}
+        send "&8&m                                                    " to {_p}
+        send "" to {_p}
+        make console execute command "playsound minecraft:entity.wither.death master %{_p}% ~ ~ ~ 0.5 0.5"
+    else:
+        set {pd.%{_uuid}%.status} to "injured"
+        pdSyncMeta({_p})
+        send "" to {_p}
+        send "&8&m                                                    " to {_p}
+        send "  &4&l⚠ INJURED ⚠" to {_p}
+        send "" to {_p}
+        send "  &7You have been &4&lINJURED&7 during a Permadeath Event!" to {_p}
+        send "  &7Injury Tier: &c%{pd.%{_uuid}%.injury_tier}%" to {_p}
+        send "  &7Events Locked: &c%{pd.%{_uuid}%.injury_remaining}%" to {_p}
+        send "" to {_p}
+        send "  &7Recover by waiting &e%{pd.%{_uuid}%.injury_remaining}% events&7" to {_p}
+        send "  &7Or use &e/hospital &7(&a10,000 Bucks&7) to heal instantly" to {_p}
+        send "&8&m                                                    " to {_p}
+        send "" to {_p}
+        make console execute command "playsound minecraft:entity.wither.death master %{_p}% ~ ~ ~ 0.5 0.8"
+
+function pdRecoverOne(p: player):
+    set {_uuid} to {_p}'s uuid
+    if {pd.%{_uuid}%.status} is "injured":
+        remove 1 from {pd.%{_uuid}%.injury_remaining}
+        if {pd.%{_uuid}%.injury_remaining} <= 0:
+            set {pd.%{_uuid}%.status} to "alive"
+            set {pd.%{_uuid}%.injury_remaining} to 0
+            make console execute command "effect clear %{_p}% minecraft:weakness"
+            send "{@event_prefix}&a&l✓ RECOVERED! &7You are no longer injured!" to {_p}
+            make console execute command "playsound minecraft:entity.player.levelup master %{_p}% ~ ~ ~ 0.5 1.2"
+        else:
+            send "{@event_prefix}&7Injury recovery: &e%{pd.%{_uuid}%.injury_remaining}% &7event(s) remaining." to {_p}
+        pdSyncMeta({_p})
+    else if {pd.%{_uuid}%.status} is "dead":
+        send "{@event_prefix}&7You are &4&lDEAD&7. Use &e/resurrect &7(&a20k Bucks&7) or &e/hospital &7(&a10k Bucks&7)." to {_p}
+
+# ============================================================
+# HOSPITAL COMMAND
+# ============================================================
+
+command /hospital:
+    description: Heal your injury instantly (costs 10,000 Bucks)
+    trigger:
+        pdInit(player)
+        set {_uuid} to player's uuid
+        set {_status} to {pd.%{_uuid}%.status}
+        if {_status} is not "injured":
+            if {_status} is not "dead":
+                send "{@prefix}&aYou are not injured!"
+                stop
+        set {_bal} to player's balance
+        if {_bal} < {@hospital_cost}:
+            send "{@prefix}&cYou need &a10,000 Bucks &cto use the hospital!"
+            send "{@prefix}&7Your balance: &a%{_bal}% Bucks"
+            stop
+        execute console command "eco take %player% {@hospital_cost}"
+        set {pd.%{_uuid}%.status} to "alive"
+        set {pd.%{_uuid}%.injury_tier} to 0
+        set {pd.%{_uuid}%.injury_remaining} to 0
+        make console execute command "effect clear %player% minecraft:weakness"
+        pdSyncMeta(player)
+        send "" to player
+        send "&8&m                                                    " to player
+        send "  &a&l✦ HOSPITAL — FULLY HEALED ✦" to player
+        send "" to player
+        send "  &7Cost: &a10,000 Bucks &7(deducted)" to player
+        send "  &7Status: &aAlive" to player
+        send "  &7Injury Tier: &e0" to player
+        send "&8&m                                                    " to player
+        send "" to player
+        make console execute command "playsound minecraft:entity.player.levelup master %player% ~ ~ ~ 1 1"
+
+# ============================================================
+# REPUTATION COMMANDS
+# ============================================================
+
+command /pdbonus <player> <integer>:
+    permission: klawcraft.admin
+    description: Give reputation bonus to a player
+    trigger:
+        if arg-2 <= 0:
+            send "{@prefix}&cAmount must be positive."
+            stop
+        set {_uuid} to arg-1's uuid
+        pdInit(arg-1)
+        add arg-2 to {pd.%{_uuid}%.reputation}
+        pdUpdateStars(arg-1)
+        pdSyncMeta(arg-1)
+        send "{@prefix}&7Gave &e%arg-2% &7reputation to &e%arg-1%&7. Total: &e%{pd.%{_uuid}%.reputation}%&7 ★%{pd.%{_uuid}%.stars}%" to player
+        if arg-1 is online:
+            send "{@event_prefix}&7You received &e%arg-2% &7reputation! Total: &e%{pd.%{_uuid}%.reputation}%&7 ★%{pd.%{_uuid}%.stars}%" to arg-1
+
+command /pdrep [<player>]:
+    aliases: /reputation, /rep
+    description: Check your or another player's reputation
+    trigger:
+        if arg-1 is set:
+            if player does not have permission "klawcraft.admin":
+                send "{@prefix}&cNo permission."
+                stop
+            set {_target} to arg-1
+        else:
+            set {_target} to player
+        set {_uuid} to {_target}'s uuid
+        pdInit({_target})
+        set {_rep} to {pd.%{_uuid}%.reputation}
+        set {_stars} to {pd.%{_uuid}%.stars}
+        set {_status} to {pd.%{_uuid}%.status}
+        set {_inj} to {pd.%{_uuid}%.injury_remaining}
+        set {_deaths} to {pd.%{_uuid}%.event_deaths}
+        set {_played} to {pd.%{_uuid}%.events_played}
+        send "" to player
+        send "&8&m                                                    " to player
+        send "  &c&l✦ Supe Record — %{_target}%" to player
+        send "" to player
+        send "  &7Reputation: &e%{_rep}%" to player
+        set {_stardisplay} to ""
+        loop {_stars} times:
+            set {_stardisplay} to "%{_stardisplay}%&6★"
+        send "  &7Stars: %{_stardisplay}% &8(%{_stars}%/5)" to player
+        send "  &7Status: &e%{_status}%" to player
+        if {_status} is "injured":
+            send "  &7Events Locked: &c%{_inj}%" to player
+        send "  &7Event Deaths: &c%{_deaths}%" to player
+        send "  &7Events Played: &a%{_played}%" to player
+        if {_stars} < 5:
+            if {_stars} is 1:
+                set {_next} to {@star2}
+            else if {_stars} is 2:
+                set {_next} to {@star3}
+            else if {_stars} is 3:
+                set {_next} to {@star4}
+            else if {_stars} is 4:
+                set {_next} to {@star5}
+            set {_need} to {_next} - {_rep}
+            send "" to player
+            send "  &7Next Star in: &e%{_need}% &7reputation" to player
+        send "&8&m                                                    " to player
+        send "" to player
+
+# ============================================================
+# ADMIN SHOUT COMMANDS
+# ============================================================
+
+command /kcshouttitle <text>:
+    permission: klawcraft.admin
+    description: Send a title message to all players
+    trigger:
+        set {_msg} to arg-1
+        send title "&6&l%{_msg}%" with subtitle "" to all players for 5 seconds
+        make console execute command "playsound minecraft:entity.ender_dragon.growl master @a ~ ~ ~ 0.3 1"
+        send "{@prefix}&7Title sent: &e%{_msg}%" to player
+
+command /kcshoutactionbar <text>:
+    permission: klawcraft.admin
+    description: Send an actionbar message to all players
+    trigger:
+        set {_msg} to arg-1
+        send action bar "&6&l%{_msg}%" to all players
+        send "{@prefix}&7Actionbar sent: &e%{_msg}%" to player
+
+# ============================================================
+# PERMADEATH EVENT — START
+# ============================================================
+
+command /startpd <text> [<text>] [<text>] [<text>] [<text>] [<text>] [<text>] [<text>] [<text>]:
+    permission: klawcraft.admin
+    description: Start a PD Event
+    trigger:
+        if {pd.active} is true:
+            send "{@prefix}&cAn event is already running! Use &e/endevent &cto end it first."
+            stop
+        set {_type} to lowercase arg-1
+        set {_valid} to false
+        if {_type} is "roam":
+            set {_valid} to true
+        else if {_type} is "elimination":
+            set {_valid} to true
+        else if {_type} is "factionwar":
+            set {_valid} to true
+        else if {_type} is "hunted":
+            set {_valid} to true
+        else if {_type} is "escort":
+            set {_valid} to true
+        else if {_type} is "rescue":
+            set {_valid} to true
+        else if {_type} is "protect":
+            set {_valid} to true
+        else if {_type} is "controlzone":
+            set {_valid} to true
+        else if {_type} is "blackout":
+            set {_valid} to true
+        else if {_type} is "supplydrop":
+            set {_valid} to true
+        else if {_type} is "survivors":
+            set {_valid} to true
+        if {_valid} is false:
+            send "{@prefix}&cInvalid event type!"
+            send "{@prefix}&7Types: &eroam&7, &eelimination&7, &efactionwar&7, &ehunted&7, &eescort&7, &erescue&7, &eprotect&7, &econtrolzone&7, &eblackout&7, &esupplydrop&7, &esurvivors"
+            stop
+        
+        # Defaults
+        set {pd.active.rep_reward} to 5
+        set {pd.active.xp_reward} to 0
+        set {pd.active.bucks_reward} to 0
+        set {pd.active.respawn_mode} to false
+        set {pd.active.duration} to {@default_duration}
+        set {_countdown} to {@countdown_seconds}
+        delete {pd.active.region}
+        delete {pd.active.lore_text}
+        delete {pd.active.title}
+        delete {pd.active.custom_reward}
+        delete {pd.active.team1_spawn}
+        delete {pd.active.team2_spawn}
+        set {_title_set} to false
+        set {_lore_set} to false
+        set {_injury_override} to true
+        
+        # Collect all arguments
+        delete {_arglist::*}
+        if arg-2 is set:
+            add arg-2 to {_arglist::*}
+        if arg-3 is set:
+            add arg-3 to {_arglist::*}
+        if arg-4 is set:
+            add arg-4 to {_arglist::*}
+        if arg-5 is set:
+            add arg-5 to {_arglist::*}
+        if arg-6 is set:
+            add arg-6 to {_arglist::*}
+        if arg-7 is set:
+            add arg-7 to {_arglist::*}
+        if arg-8 is set:
+            add arg-8 to {_arglist::*}
+        if arg-9 is set:
+            add arg-9 to {_arglist::*}
+        
+        loop {_arglist::*}:
+            if loop-value is set:
+                if loop-value starts with "title:":
+                    set {_t} to subtext of loop-value from character 7 to length of loop-value
+                    replace all "_" with " " in {_t}
+                    set {pd.active.title} to {_t}
+                    set {_title_set} to true
+                else if loop-value starts with "lore:":
+                    set {_l} to subtext of loop-value from character 6 to length of loop-value
+                    replace all "_" with " " in {_l}
+                    set {pd.active.lore_text} to {_l}
+                    set {_lore_set} to true
+                else if loop-value starts with "rep:":
+                    set {_r} to subtext of loop-value from character 5 to length of loop-value
+                    set {pd.active.rep_reward} to {_r} parsed as integer
+                else if loop-value starts with "xp:":
+                    set {_x} to subtext of loop-value from character 4 to length of loop-value
+                    set {pd.active.xp_reward} to {_x} parsed as integer
+                else if loop-value starts with "bucks:":
+                    set {_b} to subtext of loop-value from character 7 to length of loop-value
+                    set {pd.active.bucks_reward} to {_b} parsed as integer
+                else if loop-value starts with "b:":
+                    set {_b} to subtext of loop-value from character 3 to length of loop-value
+                    set {pd.active.bucks_reward} to {_b} parsed as integer
+                else if loop-value starts with "dur:":
+                    set {_d} to subtext of loop-value from character 5 to length of loop-value
+                    set {pd.active.duration} to {_d} parsed as integer
+                else if loop-value starts with "time:":
+                    set {_d} to subtext of loop-value from character 6 to length of loop-value
+                    set {pd.active.duration} to {_d} parsed as integer
+                else if loop-value starts with "countdown:":
+                    set {_cd} to subtext of loop-value from character 11 to length of loop-value
+                    set {_countdown} to {_cd} parsed as integer
+                else if loop-value starts with "cd:":
+                    set {_cd} to subtext of loop-value from character 4 to length of loop-value
+                    set {_countdown} to {_cd} parsed as integer
+                else if loop-value starts with "injury:":
+                    set {_injstr} to subtext of loop-value from character 8 to length of loop-value
+                    set {_injlower} to lowercase {_injstr}
+                    if {_injlower} is "false" or {_injlower} is "off":
+                        set {_injury_override} to false
+                    else:
+                        set {_injury_override} to true
+                else if loop-value starts with "respawn:":
+                    set {_rmstr} to subtext of loop-value from character 9 to length of loop-value
+                    set {_rmlower} to lowercase {_rmstr}
+                    if {_rmlower} is "true" or {_rmlower} is "on":
+                        set {pd.active.respawn_mode} to true
+                    else:
+                        set {pd.active.respawn_mode} to false
+                else if loop-value starts with "region:":
+                    set {_reg} to subtext of loop-value from character 8 to length of loop-value
+                    set {pd.active.region} to {_reg}
+                else if loop-value parsed as integer is set:
+                    # Position-based legacy support: 1=rep, 2=xp, 3=bucks, 4=duration, 5=countdown
+                    set {_numindex} to size of {_numargs::*}
+                    add 1 to {_numindex}
+                    add loop-value parsed as integer to {_numargs::*}
+                else:
+                    if {_title_set} is false:
+                        set {pd.active.title} to loop-value
+                        set {_title_set} to true
+                    else if {pd.active.region} is not set:
+                        set {pd.active.region} to loop-value
+        
+        # Guard: validate duration
+        if {pd.active.duration} is not set:
+            set {pd.active.duration} to {@default_duration}
+        if {pd.active.duration} <= 0:
+            set {pd.active.duration} to {@default_duration}
+        if {_countdown} is not set:
+            set {_countdown} to {@countdown_seconds}
+        if {_countdown} <= 0:
+            set {_countdown} to 5
+        
+        # Set up event state
+        set {pd.active} to true
+        set {pd.active.type} to {_type}
+        set {pd.active.injury} to {_injury_override}
+        set {pd.active.pvp} to true
+        set {pd.active.phase} to "countdown"
+        delete {pd.active.players::*}
+        delete {pd.active.team1::*}
+        delete {pd.active.team2::*}
+        delete {pd.active.dead::*}
+        delete {pd.active.vip}
+        delete {pd.active.attackers::*}
+        delete {pd.active.defenders::*}
+        delete {pd.active.declined::*}
+        delete {pd.active.kills::*}
+        delete {pd.active.participants::*}
+        set {pd.active.reward_mode} to 1
+        
+        # Confirm to admin
+        set {_durmins} to floor({pd.active.duration} / 60)
+        set {_dursecs} to {pd.active.duration}
+        if {_durmins} < 1:
+            set {_durdisplay} to "%{_dursecs}%s"
+        else:
+            set {_durdisplay} to "%{_durmins}% min"
+        send "{@prefix}&aStarting &e%{_type}% &aevent!" to player
+        if {pd.active.title} is set:
+            send "{@prefix}&7Title: &e%{pd.active.title}%" to player
+        set {_bucksdisplay} to ""
+        if {pd.active.bucks_reward} > 0:
+            set {_bucksdisplay} to " &7| Bucks: &e%{pd.active.bucks_reward}%"
+        send "{@prefix}&7Duration: &e%{_durdisplay}% &7| Countdown: &e%{_countdown}%s &7| Rep: &e%{pd.active.rep_reward}% &7| XP: &e%{pd.active.xp_reward}%%{_bucksdisplay}%" to player
+        
+        # Launch countdown
+        pdCountdown({_type}, true, {_countdown})
+
+command /startloreevent:
+    permission: klawcraft.admin
+    description: Start a Lore Event (no PvP)
+    trigger:
+        if {pd.active} is true:
+            send "{@prefix}&cAn event is already running! Use &e/endevent &cto end it first."
+            stop
+        set {pd.active} to true
+        set {pd.active.type} to "lore"
+        set {pd.active.pvp} to false
+        set {pd.active.phase} to "countdown"
+        delete {pd.active.players::*}
+        delete {pd.active.team1::*}
+        delete {pd.active.team2::*}
+        delete {pd.active.dead::*}
+        delete {pd.active.region}
+        delete {pd.active.vip}
+        delete {pd.active.attackers::*}
+        delete {pd.active.defenders::*}
+        delete {pd.active.declined::*}
+        delete {pd.active.kills::*}
+        delete {pd.active.participants::*}
+        set {pd.active.rep_reward} to 5
+        set {pd.active.xp_reward} to 0
+        set {pd.active.bucks_reward} to 0
+        set {pd.active.respawn_mode} to false
+        delete {pd.active.lore_text}
+        set {pd.active.duration} to {@default_duration}
+        delete {pd.active.title}
+        delete {pd.active.custom_reward}
+        delete {pd.active.team1_spawn}
+        delete {pd.active.team2_spawn}
+        set {pd.active.injury} to false
+        set {pd.active.reward_mode} to 1
+        pdCountdown("lore", false, {@countdown_seconds})
+
+# ============================================================
+# COUNTDOWN PHASE (Using simple action bar timer)
+# ============================================================
+
+function pdCountdown(type: text, ispd: boolean, countdown: number=60):
+    set {_secs} to {_countdown}
+    if {_secs} is not set:
+        set {_secs} to 25
+    if {_secs} <= 0:
+        set {_secs} to 5
+    set {_typename} to pdTypeName({_type})
+    set {_displaytitle} to {_typename}
+    if {pd.active.title} is set:
+        set {_displaytitle} to {pd.active.title}
+    
+    # Broadcast initial warning
+    broadcast "&8&m                                                    "
+    broadcast ""
+    if {_ispd} is true:
+        broadcast "  &4&l⚠ PERMADEATH EVENT ⚠"
+    else:
+        broadcast "  &b&l✦ LORE EVENT ✦"
+    broadcast ""
+    broadcast "  &6&l%{_displaytitle}%"
+    broadcast "  &7Type: &e%{_typename}%"
+    if {_ispd} is true:
+        broadcast "  &c&lDEATH WILL RESULT IN INJURY STATUS"
+    else:
+        if {pd.active.injury} is true:
+            broadcast "  &e&lInjury mode is ENABLED for this event"
+        else:
+            broadcast "  &a&lNo injury risk — safe event"
+    set {_durmins} to floor({pd.active.duration} / 60)
+    if {_durmins} < 1:
+        broadcast "  &7Duration: &e%{pd.active.duration}%s"
+    else:
+        broadcast "  &7Duration: &e%{_durmins}% Minutes"
+    if {pd.active.lore_text} is set:
+        broadcast ""
+        broadcast "  &d&l""%{pd.active.lore_text}%"""
+    broadcast ""
+    set {_bucksbroadcast} to ""
+    if {pd.active.bucks_reward} > 0:
+        set {_bucksbroadcast} to ", &e%{pd.active.bucks_reward}% &7Bucks"
+    broadcast "  &7Rewards: &e%{pd.active.rep_reward}% &7rep, &e%{pd.active.xp_reward}% &7XP levels%{_bucksbroadcast}%"
+    if {pd.active.vip} is set:
+        set {_vipchar} to {char.%{pd.active.vip}%.firstname}
+        if {_vipchar} is not set:
+            set {_vipop} to {pd.active.vip} parsed as offline player
+            set {_vipchar} to "%{_vipop}%"
+        broadcast "  &6&l★ VIP: &e%{_vipchar}% &7must be protected!"
+    broadcast ""
+    broadcast "  &a&l[ACCEPT] /joinevent &7| &c&l[DECLINE] /declineevent"
+    broadcast "  &7Type &a/joinevent &7or &c/declineevent"
+    broadcast ""
+    broadcast "&8&m                                                    "
+    
+    if {_ispd} is true:
+        send title "&4&l%{_displaytitle}%" with subtitle "&c&lPermadeath Event — Join or Decline?" to all players for 5 seconds
+    else:
+        send title "&b&l%{_displaytitle}%" with subtitle "&7Lore Event — Join or Decline?" to all players for 5 seconds
+    make console execute command "playsound minecraft:entity.ender_dragon.growl master @a ~ ~ ~ 0.3 1"
+    
+    wait 3 seconds
+    
+    # Simple countdown using action bar
+    set {_i} to 0
+    loop {_secs} times:
+        if {pd.active} is not true:
+            stop
+        add 1 to {_i}
+        set {_remaining} to {_secs} - {_i} + 1
+        if {_remaining} <= 10:
+            if {_ispd} is true:
+                send title "&4&l%{_remaining}%" with subtitle "&c&lDeath = Injury Status" to all players
+            else:
+                send title "&b&l%{_remaining}%" with subtitle "&7Lore event starting..." to all players
+            make console execute command "playsound minecraft:block.note_block.hat master @a ~ ~ ~ 0.5 1"
+        send action bar "&e%{_displaytitle}% &7| Starting in &c%{_remaining}%s" to all players
+        wait 1 second
+    
+    if {pd.active} is not true:
+        stop
+    
+    # Check minimum players
+    if {pd.minplayers.enabled} is true:
+        set {_partcount} to size of {pd.active.players::*}
+        if {_partcount} < 2:
+            broadcast "{@event_prefix}&c&lEVENT CANCELLED! &7Not enough players (&e%{_partcount}% &7/ &e2&7 minimum)"
+            pdEndEvent()
+            stop
+    
+    # Auto-decline non-responders
+    loop all players:
+        set {_auuid} to loop-player's uuid
+        if {pd.active.players::*} does not contain {_auuid}:
+            if {pd.active.declined::*} does not contain {_auuid}:
+                add {_auuid} to {pd.active.declined::*}
+                set game mode of loop-player to spectator
+                give loop-player 1 cookie named "&6&lGood Sport Cookie" with lore "&7Thanks for waiting!"
+                send "{@prefix}&7You were auto-declined from the event (no response). Spectator until event ends." to loop-player
+    
+    set {pd.active.phase} to "active"
+    set {pd.active.start_time} to now
+    if {_ispd} is true:
+        broadcast "{@event_prefix}&4&lTHE EVENT HAS BEGUN! &7Fight for survival!"
+        send title "&4&l⚔ %{_displaytitle}% ⚔" with subtitle "&cPermadeath Event Active" to all players for 3 seconds
+    else:
+        broadcast "{@lore_prefix}&b&lThe Lore Event has begun!"
+        send title "&b&l✦ %{_displaytitle}% ✦" with subtitle "&7Lore Event Active" to all players for 3 seconds
+    make console execute command "playsound minecraft:entity.ender_dragon.growl master @a ~ ~ ~ 0.5 1"
+    
+    # Start event timer
+    pdStartEventTimer({_ispd}, {_displaytitle})
+
+function pdStartEventTimer(ispd: boolean, displaytitle: text):
+    set {_dur} to {pd.active.duration}
+    set {_start} to now
+    while {pd.active} is true and {pd.active.phase} is "active":
+        set {_elapsed} to difference between {_start} and now in seconds
+        set {_remaining} to {_dur} - {_elapsed}
+        if {_remaining} <= 0:
+            stop
+        set {_mins} to floor({_remaining} / 60)
+        set {_secs} to floor({_remaining} mod 60)
+        set {_secstr} to "%{_secs}%"
+        if {_secs} < 10:
+            set {_secstr} to "0%{_secs}%"
+        if {_ispd} is true:
+            send action bar "&4&l⚔ %{_displaytitle}% &8| &e%{_mins}%:%{_secstr}% remaining" to all players where [{pd.active.players::*} contains input's uuid]
+        else:
+            send action bar "&b&l✦ %{_displaytitle}% &8| &e%{_mins}%:%{_secstr}% remaining" to all players where [{pd.active.players::*} contains input's uuid]
+        wait 1 second
+    
+    if {pd.active} is true:
+        if {pd.active.phase} is "active":
+            pdEndEvent()
+
+function pdTypeName(type: text) :: text:
+    if {_type} is "roam":
+        return "PD Roam"
+    else if {_type} is "elimination":
+        return "Elimination"
+    else if {_type} is "factionwar":
+        return "Faction War"
+    else if {_type} is "hunted":
+        return "Hunted"
+    else if {_type} is "escort":
+        return "Escort"
+    else if {_type} is "rescue":
+        return "Rescue"
+    else if {_type} is "protect":
+        return "Protect the VIP"
+    else if {_type} is "controlzone":
+        return "Control Zone"
+    else if {_type} is "blackout":
+        return "Blackout"
+    else if {_type} is "supplydrop":
+        return "Supply Drop"
+    else if {_type} is "survivors":
+        return "Survivors"
+    else if {_type} is "lore":
+        return "Lore Event"
+    return {_type}
+
+# ============================================================
+# PLAYER JOIN/DECLINE/LEAVE
+# ============================================================
+
+command /joinevent:
+    aliases: /joinpd, /join
+    description: Join the active Permadeath or Lore event
+    trigger:
+        if {pd.active} is not true:
+            send "{@prefix}&cNo event is currently running."
+            stop
+        set {_uuid} to player's uuid
+        if {pd.active.phase} is "active":
+            if {pd.active.dead::*} contains {_uuid}:
+                set game mode of player to spectator
+                send "{@prefix}&cYou died during this event. You cannot re-enter."
+                stop
+            if {pd.active.declined::*} contains {_uuid}:
+                set game mode of player to spectator
+                send "{@prefix}&7You are already waiting for the event to end."
+                stop
+            add {_uuid} to {pd.active.declined::*}
+            set game mode of player to spectator
+            give player 1 cookie named "&6&lGood Sport Cookie" with lore "&7Thanks for waiting!"
+            send "{@prefix}&7The event is already in progress! You've been put in &eSpectator&7 mode."
+            stop
+        if {pd.active.phase} is "ending":
+            send "{@prefix}&cThe event is ending."
+            stop
+        pdInit(player)
+        if {pd.active.players::*} contains {_uuid}:
+            send "{@prefix}&7You are already in the event."
+            stop
+        set {_status} to {pd.%{_uuid}%.status}
+        if {_status} is "injured":
+            send "{@prefix}&cYou are &4&lINJURED&c! You cannot join events."
+            send "{@prefix}&7Events locked: &c%{pd.%{_uuid}%.injury_remaining}% &7| Use &e/hospital &7to heal"
+            stop
+        if {_status} is "dead":
+            send "{@prefix}&cYou are &4&lDEAD&c! You cannot join events."
+            send "{@prefix}&7Use &e/resurrect &7(&a20k Bucks&7) or &e/hospital &7(&a10k Bucks&7) to revive"
+            stop
+        if {char.%{_uuid}%.created} is not true:
+            send "{@prefix}&cCreate a character first!"
+            stop
+        if {char.%{_uuid}%.usemcname} is set:
+            set {pd.eventchatname.%{_uuid}%} to true
+        delete {char.%{_uuid}%.usemcname}
+        add {_uuid} to {pd.active.players::*}
+        add {_uuid} to {pd.active.participants::*}
+        set {pd.active.kills.%{_uuid}%} to 0
+        add 1 to {pd.%{_uuid}%.events_played}
+        set {_typename} to pdTypeName({pd.active.type})
+        send "{@prefix}&a&l✓ Joined Event! &7%{_typename}%" to player
+        make console execute command "playsound minecraft:entity.player.levelup master %player% ~ ~ ~ 0.5 1.2"
+        broadcast "{@prefix}&e%player% &7joined the event! &8(%size of {pd.active.players::*}% players)"
+
+command /declineevent:
+    aliases: /declinepd, /decline
+    description: Decline the current event
+    trigger:
+        if {pd.active} is not true:
+            send "{@prefix}&cNo event is currently running."
+            stop
+        set {_uuid} to player's uuid
+        if {pd.active.phase} is "active":
+            if {pd.active.declined::*} contains {_uuid}:
+                send "{@prefix}&7You are already waiting for the event to end."
+                stop
+            if {pd.active.players::*} contains {_uuid}:
+                remove {_uuid} from {pd.active.players::*}
+            add {_uuid} to {pd.active.declined::*}
+            set game mode of player to spectator
+            give player 1 cookie named "&6&lGood Sport Cookie" with lore "&7Thanks for waiting!"
+            send "{@prefix}&7You've been put in &eSpectator&7 mode. Please wait until the event is over."
+            stop
+        if {pd.active.phase} is "countdown":
+            if {pd.active.players::*} contains {_uuid}:
+                remove {_uuid} from {pd.active.players::*}
+                send "{@prefix}&7You left the event queue."
+            else:
+                send "{@prefix}&7You declined the event."
+            stop
+        send "{@prefix}&7You declined the event."
+
+# ============================================================
+# DAMAGE LISTENER
+# ============================================================
+
+on damage of player:
+    if {pd.active} is true:
+        if {pd.active.phase} is "active":
+            if attacker is a player:
+                set {pd.lastattacker.%victim's uuid%} to attacker's uuid
+
+# ============================================================
+# DEATH HANDLER
+# ============================================================
+
+on death of player:
+    if {pd.active} is true:
+        if {pd.active.phase} is "active":
+            set {_uuid} to victim's uuid
+            if {pd.active.players::*} contains {_uuid}:
+                if {pd.deathguard.%{_uuid}%} is true:
+                    stop
+                set {pd.deathguard.%{_uuid}%} to true
+                
+                # Track killer
+                set {_killeruuid} to {pd.lastattacker.%{_uuid}%}
+                set {_killerchar} to "Unknown"
+                if {_killeruuid} is set:
+                    if {pd.active.players::*} contains {_killeruuid}:
+                        add 1 to {pd.active.kills.%{_killeruuid}%}
+                        add 1 to {pd.%{_killeruuid}%.event_kills}
+                        set {_killerp} to {_killeruuid} parsed as offline player
+                        set {_killerchar} to {char.%{_killeruuid}%.firstname}
+                        if {_killerchar} is not set:
+                            set {_killerchar} to {_killerp}'s name
+                        set {_kc} to {pd.active.kills.%{_killeruuid}%}
+                        if {_killerp} is online:
+                            send "{@event_prefix}&6&l+1 Kill &7[Total this event: &c%{_kc}%&7]" to {_killerp} parsed as player
+                
+                delete {pd.lastattacker.%{_uuid}%}
+                set {_victimchar} to {char.%{_uuid}%.firstname}
+                if {_victimchar} is not set:
+                    set {_victimchar} to victim's name
+                
+                add {_uuid} to {pd.active.dead::*}
+                set {_victimplayer} to victim
+                wait 1 tick
+                delete {pd.deathguard.%{_uuid}%}
+                
+                if {pd.active.respawn_mode} is true:
+                    send "{@event_prefix}&7You died but will respawn normally. (Respawn Mode: ON)" to {_victimplayer}
+                else:
+                    if {_victimplayer} is online:
+                        set game mode of {_victimplayer} to spectator
+                    if {pd.active.injury} is true:
+                        pdApplyInjury({_victimplayer})
+                    else:
+                        send "{@event_prefix}&7You died in the event, but injury is disabled." to {_victimplayer}
+                
+                set {_etype} to {pd.active.type}
+                set {_alive} to size of {pd.active.players::*} - size of {pd.active.dead::*}
+                if {_alive} < 0:
+                    set {_alive} to 0
+                
+                if {_etype} is "elimination" or {_etype} is "survivors":
+                    broadcast "{@event_prefix}&c%{_victimchar}% &7was eliminated by &c%{_killerchar}%&7! &8| &e%{_alive}% player(s) remaining"
+                else:
+                    broadcast "{@event_prefix}&c%{_victimchar}% &7was eliminated by &c%{_killerchar}%&7!"
+                
+                if {_etype} is "elimination":
+                    remove {_uuid} from {pd.active.players::*}
+                    send "{@event_prefix}&c&lELIMINATED! &7You are out of the event." to {_victimplayer}
+                    if size of {pd.active.players::*} is 1:
+                        set {_winner} to first element of {pd.active.players::*}
+                        set {_wop} to {_winner} parsed as offline player
+                        broadcast "{@event_prefix}&6&l%{_wop}% &7wins the Elimination Event!"
+                        pdEndEvent()
+
+# ============================================================
+# END EVENT
+# ============================================================
+
+command /endevent:
+    permission: klawcraft.admin
+    description: End the current event manually
+    trigger:
+        if {pd.active} is not true:
+            send "{@prefix}&cNo event is currently running."
+            stop
+        pdEndEvent()
+
+function pdEndEvent():
+    if {pd.active} is not true:
+        stop
+    set {pd.active.phase} to "ending"
+    set {_type} to {pd.active.type}
+    set {_typename} to pdTypeName({_type})
+    set {_displaytitle} to {_typename}
+    if {pd.active.title} is set:
+        set {_displaytitle} to {pd.active.title}
+    
+    # Save to history
+    if {pd.history.count} is not set:
+        set {pd.history.count} to 0
+    add 1 to {pd.history.count}
+    set {_hid} to {pd.history.count}
+    set {pd.history.%{_hid}%.type} to {_type}
+    set {pd.history.%{_hid}%.title} to {_displaytitle}
+    set {pd.history.%{_hid}%.date} to "%now%"
+    set {pd.history.%{_hid}%.participants} to size of {pd.active.participants::*}
+    
+    # Find top killer
+    set {_tophist_kills} to 0
+    set {_tophist_uuid} to ""
+    loop all players:
+        set {_ku} to loop-player's uuid
+        set {_kval} to {pd.active.kills.%{_ku}%}
+        if {_kval} is set:
+            if {_kval} > {_tophist_kills}:
+                set {_tophist_kills} to {_kval}
+                set {_tophist_uuid} to {_ku}
+    set {pd.history.%{_hid}%.top_killer} to {_tophist_uuid}
+    set {pd.history.%{_hid}%.top_kills} to {_tophist_kills}
+    
+    # Kill leaderboard
+    pdBroadcastKillLeaderboard({_type})
+    
+    # Restore participants
+    set {_allforrestore::*} to {pd.active.participants::*}
+    loop {pd.active.dead::*}:
+        if {_allforrestore::*} does not contain loop-value:
+            add loop-value to {_allforrestore::*}
+    loop {pd.active.declined::*}:
+        if {_allforrestore::*} does not contain loop-value:
+            add loop-value to {_allforrestore::*}
+    
+    loop all players:
+        if {_allforrestore::*} contains loop-player's uuid:
+            set game mode of loop-player to survival
+            if {pd.active.dead::*} contains loop-player's uuid:
+                send "{@event_prefix}&a&l✓ REVIVED! &7You are back in survival mode." to loop-player
+            else if {pd.active.declined::*} contains loop-player's uuid:
+                send "{@event_prefix}&a&l✓ Event is over! &7You are back in survival mode." to loop-player
+    
+    # Recovery
+    if {_type} is not "lore":
+        loop all players:
+            set {_loopuuid} to loop-player's uuid
+            if {_allforrestore::*} contains {_loopuuid}:
+                pdRecoverOne(loop-player)
+    
+    # Give rewards
+    if {_type} is not "lore":
+        set {_allparticipants::*} to {pd.active.participants::*}
+        loop {_allparticipants::*}:
+            set {_pp} to loop-value parsed as offline player
+            if {_pp} is online:
+                give {_pp} parsed as player 8 of cooked steak named "&6&lEvent Steak" with lore "&7Thanks for participating!"
+    
+    # Broadcast end
+    broadcast "{@event_prefix}&7The &e%{_displaytitle}% &7has ended!"
+    send title "&7&lEVENT OVER" with subtitle "&e%{_displaytitle}% Complete" to all players for 3 seconds
+    make console execute command "playsound minecraft:ui.toast.challenge_complete master @a ~ ~ ~ 0.5 1"
+    
+    # Clean up
+    delete {pd.active}
+
+function pdBroadcastKillLeaderboard(type: text):
+    set {_allp::*} to {pd.active.participants::*}
+    broadcast "&8&m                                                    "
+    broadcast ""
+    broadcast "  &6&l⚔ Kill Leaderboard ⚔ &7(%size of {_allp::*}% participants)"
+    broadcast ""
+    set {_pos} to 0
+    loop {_allp::*}:
+        set {_uuid} to loop-value
+        set {_p} to {_uuid} parsed as offline player
+        set {_pname} to "%{_p}%"
+        set {_pk} to {pd.active.kills.%{_uuid}%}
+        if {_pk} is not set:
+            set {_pk} to 0
+        if {_pk} > 0:
+            add 1 to {_pos}
+            if {_pos} is 1:
+                broadcast "  &6&l🥇 1st: &e%{_pname}% &8— &c%{_pk}% kills"
+            else if {_pos} is 2:
+                broadcast "  &7&l🥈 2nd: &e%{_pname}% &8— &c%{_pk}% kills"
+            else if {_pos} is 3:
+                broadcast "  &7&l🥉 3rd: &e%{_pname}% &8— &c%{_pk}% kills"
+            else if {_pos} <= 10:
+                broadcast "  &8%{_pos}th: &e%{_pname}% &8— &c%{_pk}% kills"
+    broadcast ""
+    broadcast "&8&m                                                    "
+
+# ============================================================
+# DAMPEN COMMAND - FIXED
+# ============================================================
+
+command /dampen <player> [<text>]:
+    permission: klawcraft.admin
+    description: Apply, remove, or toggle dampening effects
+    trigger:
+        set {_uuid} to arg-1's uuid
+        set {_action} to ""
+        if arg-2 is set:
+            set {_action} to lowercase arg-2
+        
+        if {_action} is "clear" or {_action} is "off":
+            make console execute command "effect clear %arg-1%"
+            delete {pd.dampened.%{_uuid}%}
+            send "{@prefix}&7Removed dampening from &e%arg-1%&7."
+            if arg-1 is online:
+                send "{@prefix}&aYour powers have been restored!" to arg-1
+            stop
+        
+        if {_action} is "on":
+            make console execute command "effect give %arg-1% fsang:all_dampening 999999 0 true"
+            make console execute command "effect give %arg-1% p_sing:dampened 999999 0 true"
+            set {pd.dampened.%{_uuid}%} to true
+            send "{@prefix}&7Applied dampening to &e%arg-1%&7."
+            if arg-1 is online:
+                send "{@prefix}&cYour powers have been dampened." to arg-1
+            stop
+        
+        # Default: toggle
+        if {pd.dampened.%{_uuid}%} is true:
+            make console execute command "effect clear %arg-1%"
+            delete {pd.dampened.%{_uuid}%}
+            send "{@prefix}&7Toggled OFF — Removed dampening from &e%arg-1%&7."
+            if arg-1 is online:
+                send "{@prefix}&aYour powers have been restored!" to arg-1
+        else:
+            make console execute command "effect give %arg-1% fsang:all_dampening 999999 0 true"
+            make console execute command "effect give %arg-1% p_sing:dampened 999999 0 true"
+            set {pd.dampened.%{_uuid}%} to true
+            send "{@prefix}&7Toggled ON — Applied dampening to &e%arg-1%&7."
+            if arg-1 is online:
+                send "{@prefix}&cYour powers have been dampened." to arg-1
+
+# ============================================================
+# UTILITY COMMANDS
+# ============================================================
+
+command /eventstatus:
+    aliases: /pdstatus, /event
+    description: Check current event status
+    trigger:
+        if {pd.active} is not true:
+            send "{@prefix}&7No event is currently running."
+            stop
+        set {_typename} to pdTypeName({pd.active.type})
+        set {_phase} to {pd.active.phase}
+        set {_count} to size of {pd.active.players::*}
+        set {_displaytitle} to {_typename}
+        if {pd.active.title} is set:
+            set {_displaytitle} to {pd.active.title}
+        send "" to player
+        send "&8&m                                                    " to player
+        send "  &6&l✦ Event: &e%{_displaytitle}%" to player
+        send "  &7Mode: &e%{_typename}% &8| &7Phase: &e%{_phase}%" to player
+        send "" to player
+        send "  &7Players: &e%{_count}%" to player
+        send "  &7Injury: &e%{pd.active.injury}% &8| &7PvP: &e%{pd.active.pvp}%" to player
+        set {_regiondisplay} to {pd.active.region}
+        if {_regiondisplay} is not set:
+            set {_regiondisplay} to "New York City"
+        send "  &7Region: &e%{_regiondisplay}%" to player
+        set {_durmins} to floor({pd.active.duration} / 60)
+        if {_durmins} < 1:
+            send "  &7Duration: &e%{pd.active.duration}%s" to player
+        else:
+            send "  &7Duration: &e%{_durmins}% min" to player
+        set {_bucksmsg} to ""
+        if {pd.active.bucks_reward} > 0:
+            set {_bucksmsg} to " &8| &7Bucks: &e%{pd.active.bucks_reward}%"
+        send "  &7Rewards: &e%{pd.active.rep_reward}% &7rep, &e%{pd.active.xp_reward}% &7XP%{_bucksmsg}%" to player
+        if {pd.active.lore_text} is set:
+            send "" to player
+            send "  &d&l✦ Lore:" to player
+            send "  &d%{pd.active.lore_text}%" to player
+        send "" to player
+        send "  &a/joinevent &7to join | &c/declineevent &7to decline" to player
+        send "&8&m                                                    " to player
+        send "" to player
+
+command /eventhistory [<integer>]:
+    aliases: /evhistory, /ehistory
+    description: View recent event history
+    trigger:
+        if {pd.history.count} is not set:
+            send "{@prefix}&7No events have been run yet."
+            stop
+        set {_total} to {pd.history.count}
+        set {_page} to 1
+        if arg-1 is set:
+            set {_page} to arg-1
+        set {_perpage} to 5
+        set {_maxpage} to ceil({_total} / {_perpage})
+        if {_page} > {_maxpage}:
+            set {_page} to {_maxpage}
+        if {_page} < 1:
+            set {_page} to 1
+        set {_start} to {_total} - ({_page} - 1) * {_perpage}
+        set {_end} to {_start} - {_perpage} + 1
+        if {_end} < 1:
+            set {_end} to 1
+        send "" to player
+        send "&8&m                                                    " to player
+        send "  &6&l✦ Event History &8(Page %{_page}%/%{_maxpage}%)" to player
+        send "" to player
+        set {_i} to {_start}
+        loop {_perpage} times:
+            if {_i} < 1:
+                stop
+            set {_htitle} to {pd.history.%{_i}%.title}
+            if {_htitle} is not set:
+                set {_htitle} to "Unknown Event"
+            set {_hpart} to {pd.history.%{_i}%.participants}
+            if {_hpart} is not set:
+                set {_hpart} to 0
+            set {_htopk} to {pd.history.%{_i}%.top_kills}
+            if {_htopk} is not set:
+                set {_htopk} to 0
+            send "  &e#%{_i}% &c%{_htitle}% &8| &e%{_hpart}% players &8| Top: &c%{_htopk}% kills" to player
+            subtract 1 from {_i}
+        if {_page} < {_maxpage}:
+            send "  &7Use &e/eventhistory %({_page} + 1)% &7for older events." to player
+        send "&8&m                                                    " to player
+        send "" to player
+
+command /resurrection <player>:
+    permission: klawcraft.admin
+    description: Revive a dead player
+    trigger:
+        set {_uuid} to arg-1's uuid
+        pdInit(arg-1)
+        set {_status} to {pd.%{_uuid}%.status}
+        if {_status} is not "dead":
+            send "{@prefix}&e%arg-1% &7is not dead."
+            stop
+        set {pd.%{_uuid}%.status} to "alive"
+        set {pd.%{_uuid}%.injury_tier} to 0
+        set {pd.%{_uuid}%.injury_remaining} to 0
+        if arg-1 is online:
+            make console execute command "effect clear %arg-1% minecraft:weakness"
+            set game mode of arg-1 to survival
+            send "{@event_prefix}&a&l✓ RESURRECTED! &7You have been brought back to life!" to arg-1
+            make console execute command "playsound minecraft:entity.player.levelup master %arg-1% ~ ~ ~ 1 1.2"
+        pdSyncMeta(arg-1)
+        send "{@prefix}&aResurrected &e%arg-1%&a."
+
+# ============================================================
+# INFO/HELP COMMANDS
+# ============================================================
+
+command /lorehelp:
+    aliases: /eventhelp, /pdhelp
+    description: Learn about events
+    trigger:
+        send "" to player
+        send "&8&m                                                    " to player
+        send "  &c&l✦ Event System Guide ✦" to player
+        send "" to player
+        send "  &7&lCommands:" to player
+        send "  &a/joinevent &7— Join the current event" to player
+        send "  &c/declineevent &7— Decline the event" to player
+        send "  &e/hospital &7— Heal injury (10k Bucks)" to player
+        send "  &e/reputation &7— Check your rep & stars" to player
+        send "  &e/eventstatus &7— Current event info" to player
+        send "  &e/eventhistory &7— Past event history" to player
+        send "&8&m                                                    " to player
+        send "" to player
+
+command /reputation:
+    aliases: /rep, /myrep, /stars
+    description: Check your reputation and star rank
+    trigger:
+        pdInit(player)
+        set {_uuid} to player's uuid
+        set {_rep} to {pd.%{_uuid}%.reputation}
+        set {_stars} to {pd.%{_uuid}%.stars}
+        send "" to player
+        send "&8&m                                                    " to player
+        send "  &6&l★ Reputation & Stars ★" to player
+        send "" to player
+        send "  &7Reputation: &e%{_rep}%" to player
+        send "  &7Stars: &e%{_stars}%/5" to player
+        send "&8&m                                                    " to player
+        send "" to player
